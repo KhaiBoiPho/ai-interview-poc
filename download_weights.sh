@@ -1,68 +1,52 @@
-from huggingface_hub import hf_hub_download, snapshot_download
-import os
+#!/usr/bin/env bash
+set -e
 
-CheckpointsDir = "models"
-os.makedirs(CheckpointsDir, exist_ok=True)
+MODELS_DIR="models"
 
-# Download MuseTalk V1.0 weights
-snapshot_download(
-    repo_id="TMElyralab/MuseTalk",
-    allow_patterns=["musetalk/musetalk.json", "musetalk/pytorch_model.bin"],
-    local_dir=CheckpointsDir,
-    local_dir_use_symlinks=False
-)
+echo "📦 Creating models directory..."
+mkdir -p $MODELS_DIR
 
-# Download MuseTalk V1.5 weights
-snapshot_download(
-    repo_id="TMElyralab/MuseTalk",
-    allow_patterns=["musetalkV15/musetalk.json", "musetalkV15/unet.pth"],
-    local_dir=CheckpointsDir,
-    local_dir_use_symlinks=False
-)
+echo "[1/5] Downloading MuseTalk v1.5..."
+mkdir -p $MODELS_DIR/musetalkV15
+huggingface-cli download TMElyralab/MuseTalk \
+  musetalkV15/musetalk.json \
+  musetalkV15/unet.pth \
+  --local-dir $MODELS_DIR \
+  --local-dir-use-symlinks False
 
-# Download SD VAE weights
-snapshot_download(
-    repo_id="stabilityai/sd-vae-ft-mse",
-    allow_patterns=["config.json", "diffusion_pytorch_model.bin"],
-    local_dir=f"{CheckpointsDir}/sd-vae",
-    local_dir_use_symlinks=False
-)
+echo "[2/5] Downloading SD VAE..."
+mkdir -p $MODELS_DIR/sd-vae
+huggingface-cli download stabilityai/sd-vae-ft-mse \
+  config.json \
+  diffusion_pytorch_model.bin \
+  --local-dir $MODELS_DIR/sd-vae \
+  --local-dir-use-symlinks False
 
-# Download Whisper weights
-snapshot_download(
-    repo_id="openai/whisper-tiny",
-    allow_patterns=["config.json", "pytorch_model.bin", "preprocessor_config.json"],
-    local_dir=f"{CheckpointsDir}/whisper",
-    local_dir_use_symlinks=False
-)
+echo "[3/5] Downloading Whisper Tiny..."
+mkdir -p $MODELS_DIR/whisper
+huggingface-cli download openai/whisper-tiny \
+  config.json \
+  pytorch_model.bin \
+  preprocessor_config.json \
+  --local-dir $MODELS_DIR/whisper \
+  --local-dir-use-symlinks False
 
-# Download DWPose weights
-snapshot_download(
-    repo_id="yzd-v/DWPose",
-    allow_patterns=["dw-ll_ucoco_384.pth"],
-    local_dir=f"{CheckpointsDir}/dwpose",
-    local_dir_use_symlinks=False
-)
+echo "[4/5] Downloading DWPose..."
+mkdir -p $MODELS_DIR/dwpose
+huggingface-cli download yzd-v/DWPose \
+  dw-ll_ucoco_384.pth \
+  --local-dir $MODELS_DIR/dwpose \
+  --local-dir-use-symlinks False
 
-# Download SyncNet weights
-snapshot_download(
-    repo_id="ByteDance/LatentSync",
-    allow_patterns=["latentsync_syncnet.pt"],
-    local_dir=f"{CheckpointsDir}/syncnet",
-    local_dir_use_symlinks=False
-)
+echo "[5/5] Downloading Face Parse BiSeNet..."
+mkdir -p $MODELS_DIR/face-parse-bisent
 
-# Download Face Parse Bisent weights (vẫn dùng gdown)
-import gdown
-os.makedirs(f"{CheckpointsDir}/face-parse-bisent", exist_ok=True)
-gdown.download(
-    id="154JgKpzCPW82qINcVieuPH3fZ2e0P812",
-    output=f"{CheckpointsDir}/face-parse-bisent/79999_iter.pth"
-)
+# BiSeNet model
+gdown --fuzzy https://drive.google.com/file/d/154JgKpzCPW82qINcVieuPH3fZ2e0P812 \
+  -O $MODELS_DIR/face-parse-bisent/79999_iter.pth
 
-import requests
-resnet_url = "https://download.pytorch.org/models/resnet18-5c106cde.pth"
-with open(f"{CheckpointsDir}/face-parse-bisent/resnet18-5c106cde.pth", "wb") as f:
-    f.write(requests.get(resnet_url).content)
+# ResNet18 backbone
+wget -q https://download.pytorch.org/models/resnet18-5c106cde.pth \
+  -O $MODELS_DIR/face-parse-bisent/resnet18-5c106cde.pth
 
-print("✅ All weights downloaded successfully!")
+echo "All required models downloaded successfully!"
