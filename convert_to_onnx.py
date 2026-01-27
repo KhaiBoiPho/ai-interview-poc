@@ -1,13 +1,15 @@
-import os
+# convert_to_onnx.py - Fixed version
+import torch
 import onnx
+from onnx import numpy_helper
+from onnxconverter_common import float16
+import os
 import json
 import math
-import torch
-import torch.nn as nn
-from onnxconverter_common import float16
 from diffusers import AutoencoderKL, UNet2DConditionModel
+from transformers import WhisperModel
 
-class PositionalEncoding(nn.Module):
+class PositionalEncoding(torch.nn.Module):
     def __init__(self, d_model=384, max_len=5000):
         super(PositionalEncoding, self).__init__()
         pe = torch.zeros(max_len, d_model)
@@ -24,30 +26,51 @@ class PositionalEncoding(nn.Module):
         x = x + pe.to(x.device)
         return x
 
-def convert_to_fp16(onnx_path):
-    """Convert ONNX model to FP16"""
-    print(f"Converting to FP16: {onnx_path}")
+def convert_to_fp16_safe(onnx_path):
+    """
+    Convert ONNX to FP16 with safe operations kept in FP32
+    """
+    print(f"Converting {onnx_path} to FP16 (safe mode)...")
+    
     model = onnx.load(onnx_path)
-    model_fp16 = float16.convert_float_to_float16(model)
-    fp16_path = onnx_path.replace('.onnx', '_fp16.onnx')
-    onnx.save(model_fp16, fp16_path)
-    os.remove(onnx_path)
-    print(f"✓ Saved: {fp16_path}\n")
-    return fp16_path
+    
+    # Keep certain ops in FP32 for numerical stability
+    keep_fp32_ops = {
+        'Softmax', 'LayerNormalization', 'InstanceNormalization', 
+        'BatchNormalization', 'ReduceMean', 'ReduceSum'
+    }
+    
+    try:
+        model_fp16 = float16.convert_float_to_float16(
+            model,
+            keep_io_types=True,  # Keep input/output as is
+            op_block_list=keep_fp32_ops  # Keep these ops in FP32
+        )
+        
+        fp16_path = onnx_path.replace('.onnx', '_fp16.onnx')
+        onnx.save(model_fp16, fp16_path)
+        
+        print(f"✓ Saved: {fp16_path}\n")
+        return fp16_path
+    except Exception as e:
+        print(f"⚠️  FP16 conversion failed: {e}")
+        print(f"Keeping FP32 version: {onnx_path}\n")
+        return onnx_path
 
 def export_vae_encoder(model_path="./models/sd-vae", output_dir="models/onnx"):
-    """Export VAE Encoder to ONNX FP16"""
+    """Export VAE Encoder"""
     print("="*60)
     print("EXPORTING VAE ENCODER")
     print("="*60)
-
+    
     vae = AutoencoderKL.from_pretrained(model_path)
     vae.eval()
-
-    # Input: [batch, 3, 256, 256] normalized image
+    
     dummy_input = torch.randn(1, 3, 256, 256)
     output_path = os.path.join(output_dir, "vae_encoder.onnx")
-
+    
+    print(f"Exporting to {output_path}...")
+    
     with torch.no_grad():
         torch.onnx.export(
             vae.encoder,
@@ -60,26 +83,26 @@ def export_vae_encoder(model_path="./models/sd-vae", output_dir="models/onnx"):
                 "latent": {0: "batch"}
             },
             opset_version=17,
-            do_constant_folding=True,
-            dynamo=False,
+            do_constant_folding=True
         )
-
-    convert_to_fp16(output_path)
+    
+    print("✓ FP32 exported")
+    convert_to_fp16_safe(output_path)
 
 def export_vae_decoder(model_path="./models/sd-vae", output_dir="models/onnx"):
-    """Export VAE Decoder to ONNX FP16"""
+    """Export VAE Decoder"""
     print("="*60)
     print("EXPORTING VAE DECODER")
     print("="*60)
-
+    
     vae = AutoencoderKL.from_pretrained(model_path)
     vae.eval()
-
-    # Input: [batch, 4, 32, 32] latent (after scaling)
-    dummy_latent = torch.randn(1, 4, 32, 32)
     
+    dummy_latent = torch.randn(1, 4, 32, 32)
     output_path = os.path.join(output_dir, "vae_decoder.onnx")
-
+    
+    print(f"Exporting to {output_path}...")
+    
     with torch.no_grad():
         torch.onnx.export(
             vae.decoder,
@@ -92,27 +115,26 @@ def export_vae_decoder(model_path="./models/sd-vae", output_dir="models/onnx"):
                 "image": {0: "batch"}
             },
             opset_version=17,
-            do_constant_folding=True,
-            dynamo=False,
+            do_constant_folding=True
         )
-
-    convert_to_fp16(output_path)
+    
+    print("✓ FP32 exported")
+    convert_to_fp16_safe(output_path)
 
 def export_positional_encoding(output_dir="models/onnx"):
-    """Export Positional Encoding to ONNX FP16"""
+    """Export Positional Encoding"""
     print("="*60)
     print("EXPORTING POSITIONAL ENCODING")
     print("="*60)
-
+    
     pe = PositionalEncoding(d_model=384, max_len=5000)
     pe.eval()
-
-    # Input: [batch, seq_len, 384] from whisper chunks
-    # whisper_chunks shape after rearrange: [batch, 50, 384]
-    dummy_input = torch.randn(1, 50, 384)
     
+    dummy_input = torch.randn(1, 50, 384)
     output_path = os.path.join(output_dir, "pe.onnx")
-
+    
+    print(f"Exporting to {output_path}...")
+    
     with torch.no_grad():
         torch.onnx.export(
             pe,
@@ -125,39 +147,35 @@ def export_positional_encoding(output_dir="models/onnx"):
                 "encoded_feature": {0: "batch", 1: "seq_len"}
             },
             opset_version=17,
-            do_constant_folding=True,
-            dynamo=False,
+            do_constant_folding=True
         )
     
-    convert_to_fp16(output_path)
+    print("✓ FP32 exported")
+    convert_to_fp16_safe(output_path)
 
-def export_unet(unet_config_path="./models/musetalk/musetalk.json",
+def export_unet(unet_config_path="./models/musetalkV15/musetalk.json",
                 model_path="./models/musetalkV15/unet.pth",
                 output_dir="models/onnx"):
-    """Export UNet to ONNX FP16"""
+    """Export UNet"""
     print("="*60)
     print("EXPORTING UNET")
     print("="*60)
     
-    # Load config
     with open(unet_config_path, 'r') as f:
         unet_config = json.load(f)
     
-    # Load model
     unet = UNet2DConditionModel(**unet_config)
     weights = torch.load(model_path, map_location='cpu')
     unet.load_state_dict(weights)
     unet.eval()
     
-    # Inputs:
-    # - latent: [batch, 8, 32, 32] (8 = masked_latents[4] + ref_latents[4])
-    # - timestep: [1] 
-    # - encoder_hidden_states: [batch, 50, 384] (after PE)
     dummy_latent = torch.randn(1, 8, 32, 32)
     dummy_timestep = torch.tensor([0], dtype=torch.long)
     dummy_encoder_states = torch.randn(1, 50, 384)
     
     output_path = os.path.join(output_dir, "unet.onnx")
+    
+    print(f"Exporting to {output_path}...")
     
     with torch.no_grad():
         torch.onnx.export(
@@ -172,11 +190,11 @@ def export_unet(unet_config_path="./models/musetalk/musetalk.json",
                 "output_sample": {0: "batch"}
             },
             opset_version=17,
-            do_constant_folding=True,
-            dynamo=False,
+            do_constant_folding=True
         )
     
-    convert_to_fp16(output_path)
+    print("✓ FP32 exported")
+    convert_to_fp16_safe(output_path)
 
 def main():
     output_dir = "models/onnx"
@@ -186,38 +204,40 @@ def main():
     print("  ONNX FP16 EXPORT - MUSETALK")
     print("="*60 + "\n")
     
-    # 1. VAE Encoder
-    export_vae_encoder(
-        model_path="./models/sd-vae",
-        output_dir=output_dir
-    )
-    
-    # 2. VAE Decoder
-    export_vae_decoder(
-        model_path="./models/sd-vae",
-        output_dir=output_dir
-    )
-    
-    # 3. Positional Encoding
-    export_positional_encoding(output_dir=output_dir)
-    
-    # 4. UNet
-    export_unet(
-        unet_config_path="./models/musetalk/musetalk.json",
-        model_path="./models/musetalkV15/unet.pth",
-        output_dir=output_dir
-    )
-
-    print("\n" + "="*60)
-    print("✓ EXPORT COMPLETED!")
-    print("="*60)
-    print(f"\nModels saved in: {output_dir}/")
-    print("\nExported models:")
-    print("  ✓ vae_encoder_fp16.onnx")
-    print("  ✓ vae_decoder_fp16.onnx")
-    print("  ✓ pe_fp16.onnx")
-    print("  ✓ unet_fp16.onnx")
-    print("="*60 + "\n")
+    try:
+        export_vae_encoder(
+            model_path="./models/sd-vae",
+            output_dir=output_dir
+        )
+        
+        export_vae_decoder(
+            model_path="./models/sd-vae",
+            output_dir=output_dir
+        )
+        
+        export_positional_encoding(output_dir=output_dir)
+        
+        export_unet(
+            unet_config_path="./models/musetalkV15/musetalk.json",
+            model_path="./models/musetalkV15/unet.pth",
+            output_dir=output_dir
+        )
+        
+        print("\n" + "="*60)
+        print("✓ EXPORT COMPLETED!")
+        print("="*60)
+        print(f"\nModels saved in: {output_dir}/")
+        print("\nExported models:")
+        
+        for f in os.listdir(output_dir):
+            if f.endswith('.onnx'):
+                size = os.path.getsize(os.path.join(output_dir, f)) / (1024*1024)
+                print(f"  ✓ {f} ({size:.1f} MB)")
+        
+    except Exception as e:
+        print(f"\n❌ Error during export: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()

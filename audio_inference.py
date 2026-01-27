@@ -1,33 +1,33 @@
-# audio_inference.py
+# audio_inference.py - Complete fixed version
+
 import os
 import cv2
 import copy
 import shutil
+import torch
 import numpy as np
 from tqdm import tqdm
 from musetalk.utils.blending import get_image
 from musetalk.utils.face_parsing import FaceParsing
 
 class AudioInference:
-    """
-    Run inference with different audio files using cached video data
-    """
-    
     def __init__(self, 
-                 unet,
-                 whisper_processor,
+                 vae, unet, whisper_processor,
+                 device,  # ✅ ADD device
                  result_dir="./results",
                  version="v15",
-                 skip_padding=False,
                  parsing_mode='jaw',
                  left_cheek_width=90,
                  right_cheek_width=90):
         
+        self.vae = vae
         self.unet = unet
         self.whisper_processor = whisper_processor
+        self.device = device  # ✅ Store device
         self.result_dir = result_dir
         self.version = version
-        self.skip_padding = skip_padding
+        self.parsing_mode = parsing_mode
+        self.timesteps = torch.tensor([0], device=device)
         
         # Initialize face parser
         if version == "v15":
@@ -38,9 +38,6 @@ class AudioInference:
         else:
             self.fp = FaceParsing()
         
-        self.parsing_mode = parsing_mode
-        self.timesteps = np.array([0], dtype=np.int64)
-        
         os.makedirs(result_dir, exist_ok=True)
     
     def generate(self, 
@@ -50,18 +47,7 @@ class AudioInference:
                  audio_padding_length_left=2,
                  audio_padding_length_right=2,
                  output_name=None):
-        """
-        Generate video with audio using cached video data
-        
-        Args:
-            video_cache: Preprocessed video data from VideoPreprocessor
-            audio_path: Path to audio file
-            batch_size: Batch size for inference
-            output_name: Custom output filename
-        
-        Returns:
-            output_path: Path to generated video
-        """
+        """Generate video with audio using cached video data"""
         
         print(f"\n{'='*60}")
         print(f"Generating with audio: {os.path.basename(audio_path)}")
@@ -76,6 +62,11 @@ class AudioInference:
             audio_padding_length_right=audio_padding_length_right,
         )
         print(f"✓ Extracted {len(whisper_chunks)} audio chunks")
+
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            print(f"GPU Memory: {torch.cuda.memory_allocated()/1024**3:.2f}GB / {torch.cuda.get_device_properties(0).total_memory/1024**3:.2f}GB")
         
         # Run inference
         print("\n[2/4] Running ONNX inference...")
@@ -124,15 +115,15 @@ class AudioInference:
         total = int(np.ceil(float(video_num) / batch_size))
         
         for i, (whisper_batch, latent_batch) in enumerate(tqdm(gen, total=total, desc="Inference")):
-            # UNet forward
+            # UNet forward - input [B, 8, 32, 32], output [B, 4, 32, 32]
             pred_latents = self.unet.forward(latent_batch, self.timesteps, whisper_batch)
             
-            # Decode
-            # Note: You should pass vae instance here, simplified for demo
-            # recon = self.vae.decode_latents(pred_latents)
-            # For now, just append pred_latents
-            for frame_latent in pred_latents:
-                res_frame_list.append(frame_latent)
+            # Decode latents to frames [B, H, W, 3] BGR uint8
+            decoded_frames = self.vae.decode_latents(pred_latents)
+            
+            # Append each frame
+            for frame in decoded_frames:
+                res_frame_list.append(frame)
         
         return res_frame_list
     
@@ -143,20 +134,65 @@ class AudioInference:
         for i, w in enumerate(whisper_chunks):
             idx = i % len(vae_encode_latents)
             latent = vae_encode_latents[idx]
+            
+            # # HOTFIX: If cached latent has 16 channels, slice to 8
+            # # This happens when latents were concatenated twice during caching
+            # if latent.shape[1] == 16:
+            #     latent = latent[:, :8, :, :]  # Take only first 8 channels
+            
             whisper_batch.append(w)
             latent_batch.append(latent)
 
             if len(latent_batch) >= batch_size:
-                whisper_batch = np.stack(whisper_batch, axis=0).astype(np.float16)
-                latent_batch = np.concatenate(latent_batch, axis=0).astype(np.float16)
+                whisper_batch = np.stack(whisper_batch, axis=0).astype(np.float32)
+                latent_batch = np.concatenate(latent_batch, axis=0)
+
                 yield whisper_batch, latent_batch
                 whisper_batch, latent_batch = [], []
 
         if len(latent_batch) > 0:
-            whisper_batch = np.stack(whisper_batch, axis=0).astype(np.float16)
-            latent_batch = np.concatenate(latent_batch, axis=0).astype(np.float16)
+            whisper_batch = np.stack(whisper_batch, axis=0).astype(np.float32)
+            latent_batch = np.concatenate(latent_batch, axis=0)
             yield whisper_batch, latent_batch
     
+    def _blend_face(self, background, foreground, bbox, alpha=0.95):
+        """
+        Blend generated face with original frame
+        
+        Args:
+            background: Original frame
+            foreground: Generated face region
+            bbox: [x1, y1, x2, y2]
+            alpha: Blending factor (0-1)
+        """
+        x1, y1, x2, y2 = bbox
+        
+        # Create smooth alpha mask (feathered edges)
+        h, w = foreground.shape[:2]
+        mask = np.ones((h, w), dtype=np.float32) * alpha
+        
+        # Feather the edges
+        feather_size = min(20, h//10, w//10)
+        if feather_size > 0:
+            for i in range(feather_size):
+                fade = i / feather_size
+                mask[i, :] *= fade  # Top
+                mask[-(i+1), :] *= fade  # Bottom
+                mask[:, i] *= fade  # Left
+                mask[:, -(i+1)] *= fade  # Right
+        
+        # Expand mask to 3 channels
+        mask = np.stack([mask] * 3, axis=2)
+        
+        # Blend
+        result = background.copy()
+        result[y1:y2, x1:x2] = (
+            foreground * mask + 
+            result[y1:y2, x1:x2] * (1 - mask)
+        ).astype(np.uint8)
+        
+        return result
+
     def _composite_frames(self, res_frame_list, video_cache):
         """Composite generated faces onto original frames"""
         temp_dir = os.path.join(self.result_dir, "temp_frames")
@@ -180,24 +216,23 @@ class AudioInference:
             try:
                 res_frame = cv2.resize(res_frame.astype(np.uint8), (x2-x1, y2-y1))
                 
-                if self.skip_padding:
-                    # Fast mode: direct paste
-                    ori_frame[y1:y2, x1:x2] = res_frame
+                if self.version == "v15":
+                    combine_frame = get_image(
+                        ori_frame, res_frame, [x1, y1, x2, y2], 
+                        mode=self.parsing_mode, fp=self.fp
+                    )
                 else:
-                    # Quality mode: face parsing + blending
-                    if self.version == "v15":
-                        ori_frame = get_image(ori_frame, res_frame, [x1, y1, x2, y2], 
-                                             mode=self.parsing_mode, fp=self.fp)
-                    else:
-                        ori_frame = get_image(ori_frame, res_frame, [x1, y1, x2, y2], 
-                                             fp=self.fp)
+                    combine_frame = get_image(
+                        ori_frame, res_frame, [x1, y1, x2, y2], 
+                        fp=self.fp
+                    )
                 
                 frame_path = f"{temp_dir}/{str(i).zfill(8)}.png"
-                cv2.imwrite(frame_path, ori_frame)
+                cv2.imwrite(frame_path, combine_frame)
                 final_frames.append(frame_path)
                 
             except Exception as e:
-                print(f"Warning: Failed to composite frame {i}: {e}")
+                print(f"Error frame {i}: {e}")
                 continue
         
         return temp_dir, final_frames

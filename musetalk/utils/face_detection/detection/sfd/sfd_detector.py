@@ -1,11 +1,12 @@
 import os
-import torch
+import cv2
 from torch.utils.model_zoo import load_url
 
 from ..core import FaceDetector
+
 from .net_s3fd import s3fd
-from .bbox import nms
-from .detect import detect, batch_detect
+from .bbox import *
+from .detect import *
 
 models_urls = {
     's3fd': 'https://www.adrianbulat.com/downloads/python-fan/s3fd-619a316812.pth',

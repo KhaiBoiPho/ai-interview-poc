@@ -1,6 +1,8 @@
 from PIL import Image
 import numpy as np
 import cv2
+import copy
+
 
 def get_crop_box(box, expand):
     x, y, x1, y1 = box
@@ -52,7 +54,7 @@ def get_image(image, face, face_box, upper_boundary_ratio=0.5, expand=1.5, mode=
     x, y, x1, y1 = face_box  # 获取面部边界框的坐标
     crop_box, s = get_crop_box(face_box, expand)  # 计算扩展后的裁剪框
     x_s, y_s, x_e, y_e = crop_box  # 裁剪框的坐标
-    face_position = (x, y)  # 面部在原始图像中的位置  # noqa: F841
+    face_position = (x, y)  # 面部在原始图像中的位置
 
     # 从身体图像中裁剪出扩展后的面部区域（下巴到边界有距离）
     face_large = body.crop(crop_box)

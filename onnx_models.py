@@ -16,13 +16,13 @@ class ONNXVAE:
         sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
         self.encoder = ort.InferenceSession(
-            f"{model_dir}/vae_encoder_fp16.onnx",
+            f"{model_dir}/vae_encoder.onnx",
             sess_options=sess_options,
             providers=providers
         )
 
         self.decoder = ort.InferenceSession(
-            f"{model_dir}/vae_decoder_fp16.onnx",
+            f"{model_dir}/vae_decoder.onnx",
             sess_options=sess_options,
             providers=providers
         )
@@ -73,7 +73,7 @@ class ONNXVAE:
         x = np.transpose(x, (2, 0, 1))
         x = np.expand_dims(x, 0)
         
-        return x.astype(np.float16)
+        return x.astype(np.float32)
     
     def encode_latents(self, image):
         """
@@ -140,15 +140,35 @@ class ONNXUNet:
         sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         
         self.pe = ort.InferenceSession(
-            f"{model_dir}/pe_fp16.onnx",
+            f"{model_dir}/pe.onnx",
             sess_options=sess_options,
             providers=providers
         )
         self.unet = ort.InferenceSession(
-            f"{model_dir}/unet_fp16.onnx",
+            f"{model_dir}/unet.onnx",
             sess_options=sess_options,
             providers=providers
         )
+
+        # Get expected input dtype from model metadata
+        self.pe_dtype = self._get_input_dtype(self.pe, "audio_feature")
+        self.unet_latent_dtype = self._get_input_dtype(self.unet, "latent")
+        self.unet_encoder_dtype = self._get_input_dtype(self.unet, "encoder_hidden_states")
+        
+        print(f"PE expects: {self.pe_dtype}")
+        print(f"UNet latent expects: {self.unet_latent_dtype}")
+        print(f"UNet encoder expects: {self.unet_encoder_dtype}")
+
+    def _get_input_dtype(self, session, input_name):
+        """Get expected dtype for input"""
+        for inp in session.get_inputs():
+            if inp.name == input_name:
+                type_str = inp.type
+                if 'float16' in type_str or 'half' in type_str:
+                    return np.float16
+                else:
+                    return np.float32
+        return np.float32  # Default
     
     def _get_providers(self, use_gpu):
         providers = []
@@ -168,10 +188,16 @@ class ONNXUNet:
         encoder_hidden_states: [B, seq_len, 384] float16
         return: [B, 4, 32, 32] float16
         """
+        encoder_hidden_states = encoder_hidden_states.astype(self.pe_dtype)
+
         # Add positional encoding
         encoded_states = self.pe.run(None, {
             "audio_feature": encoder_hidden_states
         })[0]
+
+        # Convert to UNet expected dtypes
+        latent = latent.astype(self.unet_latent_dtype)
+        encoded_states = encoded_states.astype(self.unet_encoder_dtype)
         
         # UNet forward
         output = self.unet.run(None, {

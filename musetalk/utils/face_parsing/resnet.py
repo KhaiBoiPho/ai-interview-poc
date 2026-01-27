@@ -4,6 +4,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.utils.model_zoo as modelzoo
+
+# from modules.bn import InPlaceABNSync as BatchNorm2d
 
 resnet18_url = 'https://download.pytorch.org/models/resnet18-5c106cde.pth'
 
@@ -80,8 +83,7 @@ class Resnet18(nn.Module):
         state_dict = torch.load(model_path) #modelzoo.load_url(resnet18_url)
         self_state_dict = self.state_dict()
         for k, v in state_dict.items():
-            if 'fc' in k: 
-                continue
+            if 'fc' in k: continue
             self_state_dict.update({k: v})
         self.load_state_dict(self_state_dict)
 
@@ -90,7 +92,7 @@ class Resnet18(nn.Module):
         for name, module in self.named_modules():
             if isinstance(module, (nn.Linear, nn.Conv2d)):
                 wd_params.append(module.weight)
-                if module.bias is not None:
+                if not module.bias is None:
                     nowd_params.append(module.bias)
             elif isinstance(module,  nn.BatchNorm2d):
                 nowd_params += list(module.parameters())

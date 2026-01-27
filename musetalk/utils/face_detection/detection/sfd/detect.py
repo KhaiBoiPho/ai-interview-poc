@@ -1,9 +1,19 @@
 import torch
 import torch.nn.functional as F
 
+import os
+import sys
 import cv2
+import random
+import datetime
+import math
+import argparse
 import numpy as np
-from .bbox import decode, batch_decode
+
+import scipy.io as sio
+import zipfile
+from .net_s3fd import s3fd
+from .bbox import *
 
 
 def detect(net, img, device):
@@ -27,7 +37,7 @@ def detect(net, img, device):
         ocls, oreg = olist[i * 2], olist[i * 2 + 1]
         FB, FC, FH, FW = ocls.size()  # feature map size
         stride = 2**(i + 2)    # 4,8,16,32,64,128
-        anchor = stride * 4  # noqa: F841
+        anchor = stride * 4
         poss = zip(*np.where(ocls[:, 1, :, :] > 0.05))
         for Iindex, hindex, windex in poss:
             axc, ayc = stride / 2 + windex * stride, stride / 2 + hindex * stride
@@ -67,7 +77,7 @@ def batch_detect(net, imgs, device):
         ocls, oreg = olist[i * 2], olist[i * 2 + 1]
         FB, FC, FH, FW = ocls.size()  # feature map size
         stride = 2**(i + 2)    # 4,8,16,32,64,128
-        anchor = stride * 4  # noqa: F841
+        anchor = stride * 4
         poss = zip(*np.where(ocls[:, 1, :, :] > 0.05))
         for Iindex, hindex, windex in poss:
             axc, ayc = stride / 2 + windex * stride, stride / 2 + hindex * stride

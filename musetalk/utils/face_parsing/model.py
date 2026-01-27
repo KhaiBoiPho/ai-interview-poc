@@ -1,7 +1,15 @@
+#!/usr/bin/python
+# -*- encoding: utf-8 -*-
+
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchvision
+
 from .resnet import Resnet18
+# from modules.bn import InPlaceABNSync as BatchNorm2d
+
 
 class ConvBNReLU(nn.Module):
     def __init__(self, in_chan, out_chan, ks=3, stride=1, padding=1, *args, **kwargs):
@@ -24,8 +32,7 @@ class ConvBNReLU(nn.Module):
         for ly in self.children():
             if isinstance(ly, nn.Conv2d):
                 nn.init.kaiming_normal_(ly.weight, a=1)
-                if ly.bias is not None: 
-                    nn.init.constant_(ly.bias, 0)
+                if not ly.bias is None: nn.init.constant_(ly.bias, 0)
 
 class BiSeNetOutput(nn.Module):
     def __init__(self, in_chan, mid_chan, n_classes, *args, **kwargs):
@@ -43,15 +50,14 @@ class BiSeNetOutput(nn.Module):
         for ly in self.children():
             if isinstance(ly, nn.Conv2d):
                 nn.init.kaiming_normal_(ly.weight, a=1)
-                if ly.bias is not None: 
-                    nn.init.constant_(ly.bias, 0)
+                if not ly.bias is None: nn.init.constant_(ly.bias, 0)
 
     def get_params(self):
         wd_params, nowd_params = [], []
         for name, module in self.named_modules():
             if isinstance(module, nn.Linear) or isinstance(module, nn.Conv2d):
                 wd_params.append(module.weight)
-                if module.bias is not None:
+                if not module.bias is None:
                     nowd_params.append(module.bias)
             elif isinstance(module, nn.BatchNorm2d):
                 nowd_params += list(module.parameters())
@@ -80,8 +86,7 @@ class AttentionRefinementModule(nn.Module):
         for ly in self.children():
             if isinstance(ly, nn.Conv2d):
                 nn.init.kaiming_normal_(ly.weight, a=1)
-                if ly.bias is not None: 
-                    nn.init.constant_(ly.bias, 0)
+                if not ly.bias is None: nn.init.constant_(ly.bias, 0)
 
 
 class ContextPath(nn.Module):
@@ -123,15 +128,14 @@ class ContextPath(nn.Module):
         for ly in self.children():
             if isinstance(ly, nn.Conv2d):
                 nn.init.kaiming_normal_(ly.weight, a=1)
-                if ly.bias is not None: 
-                    nn.init.constant_(ly.bias, 0)
+                if not ly.bias is None: nn.init.constant_(ly.bias, 0)
 
     def get_params(self):
         wd_params, nowd_params = [], []
         for name, module in self.named_modules():
             if isinstance(module, (nn.Linear, nn.Conv2d)):
                 wd_params.append(module.weight)
-                if module.bias is not None:
+                if not module.bias is None:
                     nowd_params.append(module.bias)
             elif isinstance(module, nn.BatchNorm2d):
                 nowd_params += list(module.parameters())
@@ -159,15 +163,14 @@ class SpatialPath(nn.Module):
         for ly in self.children():
             if isinstance(ly, nn.Conv2d):
                 nn.init.kaiming_normal_(ly.weight, a=1)
-                if ly.bias is not None: 
-                    nn.init.constant_(ly.bias, 0)
+                if not ly.bias is None: nn.init.constant_(ly.bias, 0)
 
     def get_params(self):
         wd_params, nowd_params = [], []
         for name, module in self.named_modules():
             if isinstance(module, nn.Linear) or isinstance(module, nn.Conv2d):
                 wd_params.append(module.weight)
-                if module.bias is not None:
+                if not module.bias is None:
                     nowd_params.append(module.bias)
             elif isinstance(module, nn.BatchNorm2d):
                 nowd_params += list(module.parameters())
@@ -210,15 +213,14 @@ class FeatureFusionModule(nn.Module):
         for ly in self.children():
             if isinstance(ly, nn.Conv2d):
                 nn.init.kaiming_normal_(ly.weight, a=1)
-                if ly.bias is not None: 
-                    nn.init.constant_(ly.bias, 0)
+                if not ly.bias is None: nn.init.constant_(ly.bias, 0)
 
     def get_params(self):
         wd_params, nowd_params = [], []
         for name, module in self.named_modules():
             if isinstance(module, nn.Linear) or isinstance(module, nn.Conv2d):
                 wd_params.append(module.weight)
-                if module.bias is not None:
+                if not module.bias is None:
                     nowd_params.append(module.bias)
             elif isinstance(module, nn.BatchNorm2d):
                 nowd_params += list(module.parameters())
@@ -255,8 +257,7 @@ class BiSeNet(nn.Module):
         for ly in self.children():
             if isinstance(ly, nn.Conv2d):
                 nn.init.kaiming_normal_(ly.weight, a=1)
-                if ly.bias is not None: 
-                    nn.init.constant_(ly.bias, 0)
+                if not ly.bias is None: nn.init.constant_(ly.bias, 0)
 
     def get_params(self):
         wd_params, nowd_params, lr_mul_wd_params, lr_mul_nowd_params = [], [], [], []

@@ -1,4 +1,5 @@
 # api_server.py
+import os
 from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.responses import FileResponse
 import shutil
@@ -23,6 +24,7 @@ async def preprocess_video(video: UploadFile = File(...)):
     """Preprocess video and return video_id"""
     video_id = str(uuid.uuid4())
     video_path = f"./temp/{video_id}_input.mp4"
+    os.makedirs(os.path.dirname(video_path), exist_ok=True)
     
     # Save uploaded video
     with open(video_path, "wb") as buffer:
@@ -48,6 +50,7 @@ async def generate(
         return {"error": "Video not found. Please preprocess first."}
     
     audio_path = f"./temp/{uuid.uuid4()}_audio.wav"
+    os.makedirs(os.path.dirname(audio_path), exist_ok=True)
     
     # Save uploaded audio
     with open(audio_path, "wb") as buffer:
@@ -58,7 +61,7 @@ async def generate(
     output_path = pipeline.generate_with_audio(
         video_cache=video_cache,
         audio_path=audio_path,
-        batch_size=16
+        batch_size=2
     )
     
     return FileResponse(output_path, media_type="video/mp4")

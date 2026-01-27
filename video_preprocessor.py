@@ -48,7 +48,17 @@ class VideoPreprocessor:
         
         # Detect faces and landmarks
         print("\n[2/4] Detecting faces and landmarks...")
-        coord_list, frame_list = get_landmark_and_bbox(input_img_list, bbox_shift)
+        # Detect faces - check for saved coords first
+        coord_pkl = os.path.join(self.cache_dir, f"{video_basename}_coords.pkl")
+        if os.path.exists(coord_pkl) and use_saved_coord:
+            with open(coord_pkl, 'rb') as f:
+                coord_list = pickle.load(f)
+            from musetalk.utils.preprocessing import read_imgs
+            frame_list = read_imgs(input_img_list)
+        else:
+            coord_list, frame_list = get_landmark_and_bbox(input_img_list, bbox_shift)
+            with open(coord_pkl, 'wb') as f:
+                pickle.dump(coord_list, f)
         print(f"✓ Detected faces in {len(frame_list)} frames")
         
         # Encode frames to latents

@@ -2,6 +2,7 @@ import math
 import os
 
 import librosa
+import numpy as np
 import torch
 from einops import rearrange
 from transformers import AutoFeatureExtractor

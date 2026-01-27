@@ -1,19 +1,30 @@
 from __future__ import print_function
+import os
+import sys
+import cv2
+import random
+import datetime
+import time
 import math
+import argparse
 import numpy as np
 import torch
 
-def IOU(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2):
-    sa = abs((ax2 - ax1) * (ay2 - ay1))
-    sb = abs((bx2 - bx1) * (by2 - by1))
-    x1, y1 = max(ax1, bx1), max(ay1, by1)
-    x2, y2 = min(ax2, bx2), min(ay2, by2)
-    w = x2 - x1
-    h = y2 - y1
-    if w < 0 or h < 0:
-        return 0.0
-    else:
-        return 1.0 * w * h / (sa + sb - w * h)
+try:
+    from iou import IOU
+except BaseException:
+    # IOU cython speedup 10x
+    def IOU(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2):
+        sa = abs((ax2 - ax1) * (ay2 - ay1))
+        sb = abs((bx2 - bx1) * (by2 - by1))
+        x1, y1 = max(ax1, bx1), max(ay1, by1)
+        x2, y2 = min(ax2, bx2), min(ay2, by2)
+        w = x2 - x1
+        h = y2 - y1
+        if w < 0 or h < 0:
+            return 0.0
+        else:
+            return 1.0 * w * h / (sa + sb - w * h)
 
 
 def bboxlog(x1, y1, x2, y2, axc, ayc, aww, ahh):

@@ -1,7 +1,12 @@
+import sys
 from face_detection import FaceAlignment,LandmarksType
+from os import listdir, path
+import subprocess
 import numpy as np
 import cv2
 import pickle
+import os
+import json
 from mmpose.apis import inference_topdown, init_model
 from mmpose.structures import merge_data_samples
 import torch
@@ -21,8 +26,8 @@ fa = FaceAlignment(LandmarksType._2D, flip_input=False,device=device)
 coord_placeholder = (0.0,0.0,0.0,0.0)
 
 def resize_landmark(landmark, w, h, new_w, new_h):
-    w_ratio = new_w / w  # noqa: F841
-    h_ratio = new_h / h  # noqa: F841
+    w_ratio = new_w / w
+    h_ratio = new_h / h
     landmark_norm = landmark / [w, h]
     landmark_resized = landmark_norm * [new_w, new_h]
     return landmark_resized
@@ -40,7 +45,7 @@ def get_bbox_range(img_list,upperbondrange =0):
     batch_size_fa = 1
     batches = [frames[i:i + batch_size_fa] for i in range(0, len(frames), batch_size_fa)]
     coords_list = []
-    landmarks = []  # noqa: F841
+    landmarks = []
     if upperbondrange != 0:
         print('get key_landmark and face bounding boxes with the bbox_shift:',upperbondrange)
     else:
@@ -81,7 +86,7 @@ def get_landmark_and_bbox(img_list,upperbondrange =0):
     batch_size_fa = 1
     batches = [frames[i:i + batch_size_fa] for i in range(0, len(frames), batch_size_fa)]
     coords_list = []
-    landmarks = []  # noqa: F841
+    landmarks = []
     if upperbondrange != 0:
         print('get key_landmark and face bounding boxes with the bbox_shift:',upperbondrange)
     else:
@@ -121,7 +126,7 @@ def get_landmark_and_bbox(img_list,upperbondrange =0):
             
             if y2-y1<=0 or x2-x1<=0 or x1<0: # if the landmark bbox is not suitable, reuse the bbox
                 coords_list += [f]
-                w,h = f[2]-f[0], f[3]-f[1]  # noqa: F841
+                w,h = f[2]-f[0], f[3]-f[1]
                 print("error bbox:",f)
             else:
                 coords_list += [f_landmark]
