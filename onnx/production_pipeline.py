@@ -2,7 +2,7 @@
 import os
 import torch
 from onnx_models import ONNXVAE, ONNXUNet, FasterWhisperProcessor
-from video_preprocessor import VideoPreprocessor
+from onnx.video_preprocessor import VideoPreprocessor
 from audio_inference import AudioInference
 
 class ProductionPipeline:
