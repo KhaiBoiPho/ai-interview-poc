@@ -157,19 +157,6 @@ async def preprocess_video(
 
         # Check if already processed
         metadata_path = os.path.join(CACHE_DIR, f"{video_id}_metadata.pkl")
-        # if os.path.exists(metadata_path):
-        #     with open(metadata_path, 'rb') as f:
-        #         metadata = pickle.load(f)
-        #     return JSONResponse({
-        #         "status": "already_cached",
-        #         "video_id": video_id,
-        #         "fps": metadata['fps'],
-        #         "num_frames": metadata['num_frames'],
-        #         "masks_cached": 'masks_path' in metadata,
-        #         "latents_cached": 'latents_path' in metadata,
-        #         "frames_cached": "frames_path" in metadata,
-        #         "message": "Video already preprocessed"
-        #     })
 
         if os.path.exists(metadata_path):
             with open(metadata_path, "rb") as f:
