@@ -14,9 +14,7 @@ echo " OpenCV: $OPENCV_VERSION"
 echo " Torch:  2.0.1 + CUDA 11.7"
 echo "============================================"
 
-# ------------------------------------------------
 # Conda bootstrap
-# ------------------------------------------------
 if ! command -v conda >/dev/null 2>&1; then
   MINIFORGE_DIR="$HOME/miniforge3"
   wget -q https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O /tmp/miniforge.sh
@@ -26,30 +24,22 @@ else
   source "$(conda info --base)/etc/profile.d/conda.sh"
 fi
 
-# ------------------------------------------------
 # Env
-# ------------------------------------------------
 if ! conda env list | grep -q "^$ENV_NAME"; then
   conda create -n "$ENV_NAME" python="$PYTHON_VERSION" -y
 fi
 conda activate "$ENV_NAME"
 
-# ------------------------------------------------
 # Tooling (HARD PIN)
-# ------------------------------------------------
 pip install --upgrade pip wheel
 pip install "setuptools==60.2.0"
 
-# ------------------------------------------------
 # NumPy / OpenCV (ABI SAFE)
-# ------------------------------------------------
 pip uninstall -y numpy opencv-python || true
 pip install numpy=="$NUMPY_VERSION"
 pip install opencv-python=="$OPENCV_VERSION"
 
-# ------------------------------------------------
 # PyTorch CUDA 11.7
-# ------------------------------------------------
 pip uninstall -y torch torchvision torchaudio || true
 pip install \
   torch==2.0.1 \
@@ -57,9 +47,7 @@ pip install \
   torchaudio==2.0.2 \
   --index-url https://download.pytorch.org/whl/cu117
 
-# ------------------------------------------------
 # OpenMMLab (NO DEPS)
-# ------------------------------------------------
 pip uninstall -y mmcv mmengine mmpose xtcocotools || true
 pip install openmim
 
@@ -69,9 +57,7 @@ mim install "mmcv>=2.0.0,<2.2.0" \
   -f https://download.openmmlab.com/mmcv/dist/cu117/torch2.0.0/index.html
 pip install mmpose==1.2.0 --no-deps
 
-# ------------------------------------------------
-# REQUIRED RUNTIME DEPS (BẮT BUỘC)
-# ------------------------------------------------
+# REQUIRED RUNTIME DEPS
 pip install \
   addict \
   yapf \
@@ -80,15 +66,12 @@ pip install \
   munkres \
   scipy==1.11.4
 pip install chumpy --no-build-isolation
-# ------------------------------------------------
+
 # xtcocotools (ABI SAFE)
-# ------------------------------------------------
 pip install xtcocotools==1.14.3 --no-build-isolation
 pip install --force-reinstall numpy=="$NUMPY_VERSION"
 
-# ------------------------------------------------
 # Verify core stack
-# ------------------------------------------------
 python - << 'EOF'
 import numpy, cv2, torch
 import mmcv, mmengine, mmpose
@@ -104,9 +87,7 @@ print("xtcocotools: OK")
 print("✅ ABI CLEAN")
 EOF
 
-# ------------------------------------------------
 # MuseTalk deps
-# ------------------------------------------------
 pip install \
   "diffusers>=0.20,<0.21" \
   "transformers>=4.30,<4.35" \
