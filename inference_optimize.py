@@ -1,5 +1,6 @@
 # musetalk inference - OPTIMIZED VERSION
 import os
+import subprocess
 import cv2
 import copy
 import torch
@@ -135,7 +136,8 @@ async def preprocess_video(
     version: str = Form("v15"),
     precache_masks: bool = Form(True),
     precache_latents: bool = Form(True),
-    num_workers: int = Form(8)
+    num_workers: int = Form(8),
+    precache_frames: bool = Form(True),
 ):
     """
     Step 1: Process video, extract frames, detect faces, and cache everything
@@ -155,16 +157,61 @@ async def preprocess_video(
 
         # Check if already processed
         metadata_path = os.path.join(CACHE_DIR, f"{video_id}_metadata.pkl")
+        # if os.path.exists(metadata_path):
+        #     with open(metadata_path, 'rb') as f:
+        #         metadata = pickle.load(f)
+        #     return JSONResponse({
+        #         "status": "already_cached",
+        #         "video_id": video_id,
+        #         "fps": metadata['fps'],
+        #         "num_frames": metadata['num_frames'],
+        #         "masks_cached": 'masks_path' in metadata,
+        #         "latents_cached": 'latents_path' in metadata,
+        #         "frames_cached": "frames_path" in metadata,
+        #         "message": "Video already preprocessed"
+        #     })
+
         if os.path.exists(metadata_path):
-            with open(metadata_path, 'rb') as f:
+            with open(metadata_path, "rb") as f:
                 metadata = pickle.load(f)
+
+            # Upgrade: build frames_path if missing and user requests precache_frames
+            need_frames = precache_frames and (
+                "frames_path" not in metadata
+                or not metadata.get("frames_path")
+                or not os.path.exists(metadata.get("frames_path", ""))
+            )
+
+            if need_frames:
+                print("⚡ Upgrading cache: creating frames_path from existing PNG frames...")
+
+                input_img_list = sorted(glob.glob(os.path.join(metadata["frames_dir"], "*.[jpJP][pnPN]*[gG]")))
+                frames = [cv2.imread(p) for p in tqdm(input_img_list, desc="Caching frames")]
+                if any(fr is None for fr in frames):
+                    raise HTTPException(status_code=500, detail="Some frames could not be read while upgrading frames cache")
+
+                h, w, c = frames[0].shape
+                for i, fr in enumerate(frames):
+                    if fr.shape != (h, w, c):
+                        raise HTTPException(status_code=500, detail=f"Inconsistent frame shape at {i}: {fr.shape} vs {(h,w,c)}")
+
+                frames_path = os.path.join(CACHE_DIR, f"{metadata['video_id']}_frames_uint8.npy")
+                np.save(frames_path, np.stack(frames, axis=0).astype(np.uint8))
+
+                metadata["frames_path"] = frames_path
+                metadata["frame_shape"] = (h, w, c)
+
+                with open(metadata_path, "wb") as f:
+                    pickle.dump(metadata, f)
+
             return JSONResponse({
                 "status": "already_cached",
-                "video_id": video_id,
-                "fps": metadata['fps'],
-                "num_frames": metadata['num_frames'],
-                "masks_cached": 'masks_path' in metadata,
-                "latents_cached": 'latents_path' in metadata,
+                "video_id": metadata["video_id"],
+                "fps": metadata["fps"],
+                "num_frames": metadata["num_frames"],
+                "masks_cached": "masks_path" in metadata,
+                "latents_cached": "latents_path" in metadata,
+                "frames_cached": ("frames_path" in metadata and os.path.exists(metadata.get("frames_path",""))),
                 "message": "Video already preprocessed"
             })
         
@@ -182,22 +229,42 @@ async def preprocess_video(
         
         # Detect faces and get bounding boxes
         coord_save_path = os.path.join(CACHE_DIR, f"{video_id}_coords.pkl")
-        
+
         print(f"Detecting faces for {len(input_img_list)} frames...")
         coord_list, frame_list = get_landmark_and_bbox(input_img_list, bbox_shift)
-        
+
         # Save coordinates
-        with open(coord_save_path, 'wb') as f:
+        with open(coord_save_path, "wb") as f:
             pickle.dump(coord_list, f)
 
-        # Initialize metadata
+        # Initialize metadata ONCE
         metadata = {
             "video_id": video_id,
             "fps": fps,
             "num_frames": len(frame_list),
             "coord_path": coord_save_path,
-            "frames_dir": save_dir_full
+            "frames_dir": save_dir_full,
         }
+
+        # Pre-cache frames
+        if precache_frames:
+            print("Pre-caching frames to disk (fast mmap load later)...")
+
+            if not frame_list or frame_list[0] is None:
+                raise ValueError("frame_list is empty or first frame is None")
+
+            h, w, c = frame_list[0].shape
+            for i, fr in enumerate(frame_list):
+                if fr is None:
+                    raise ValueError(f"Frame {i} is None (failed to read)")
+                if fr.shape != (h, w, c):
+                    raise ValueError(f"Inconsistent frame shape at {i}: {fr.shape} vs {(h,w,c)}")
+
+            frames_path = os.path.join(CACHE_DIR, f"{video_id}_frames_uint8.npy")
+            np.save(frames_path, np.stack(frame_list, axis=0).astype(np.uint8))
+
+            metadata["frames_path"] = frames_path
+            metadata["frame_shape"] = (h, w, c)
 
         # Pre-cache masks
         if precache_masks:
@@ -363,41 +430,31 @@ async def generate_lipsync(
         audio_filename = os.path.splitext(audio.filename)[0]
         audio_path = os.path.join(CACHE_DIR, f"temp_audio_{video_id}_{audio_filename}.wav")
         audio_cache_path = os.path.join(CACHE_DIR, f"audio_{video_id}_{audio_filename}.pt")
-        
-        # Check if audio already processed
+
+        # ALWAYS write audio file for ffmpeg mux
+        with open(audio_path, "wb") as f:
+            shutil.copyfileobj(audio.file, f)
+
+        fps = metadata["fps"]
+
         if os.path.exists(audio_cache_path):
             print("⚡ Loading cached audio features (instant)...")
             cached_data = torch.load(audio_cache_path, map_location=device)
-            whisper_chunks = cached_data['whisper_chunks']
-            fps = cached_data['fps']
+            whisper_chunks = cached_data["whisper_chunks"]
             print(f"Loaded {len(whisper_chunks)} audio chunks from cache")
         else:
-            # Process audio from scratch
-            with open(audio_path, "wb") as f:
-                shutil.copyfileobj(audio.file, f)
-
-            fps = metadata['fps']
-            print(f"Processing audio at {fps} fps...")
-
-            # Audio processing with optimization
             print("Extracting audio features...")
             whisper_input_features, librosa_length = audio_processor.get_audio_feature(audio_path)
-            
+
             print("Processing with Whisper...")
             with torch.no_grad(), autocast(enabled=torch.cuda.is_available()):
                 whisper_chunks = audio_processor.get_whisper_chunk(
-                    whisper_input_features, device, torch.float16, whisper,
+                    whisper_input_features, device, unet.model.dtype, whisper,
                     librosa_length, fps=fps,
                     audio_padding_length_left=audio_padding_left,
                     audio_padding_length_right=audio_padding_right
                 )
-            print(f"Generated {len(whisper_chunks)} audio chunks")
-            
-            # Cache for future use
-            torch.save({
-                'whisper_chunks': whisper_chunks,
-                'fps': fps
-            }, audio_cache_path)
+            torch.save({"whisper_chunks": whisper_chunks}, audio_cache_path)
             print("Audio features cached")
 
         # Load cached coordinates
@@ -405,9 +462,15 @@ async def generate_lipsync(
             coord_list = pickle.load(f)
 
         # Load frames
-        input_img_list = sorted(glob.glob(os.path.join(metadata['frames_dir'], '*.[jpJP][pnPN]*[gG]')))
-        print(f"Loading {len(input_img_list)} frames...")
-        frame_list = [cv2.imread(img) for img in tqdm(input_img_list, desc="Loading frames")]
+        if "frames_path" in metadata and os.path.exists(metadata["frames_path"]):
+            print("⚡ Loading cached frames (mmap)...")
+            frames_np = np.load(metadata["frames_path"], mmap_mode="r")  # shape (N,H,W,3)
+            frame_list = frames_np  # keep as array-like
+            print(f"Loaded {len(frame_list)} cached frames")
+        else:
+            input_img_list = sorted(glob.glob(os.path.join(metadata["frames_dir"], "*.[jpJP][pnPN]*[gG]")))
+            print(f"Loading {len(input_img_list)} frames...")
+            frame_list = [cv2.imread(p) for p in tqdm(input_img_list, desc="Loading frames")]
 
         # Load or compute latents
         if use_cached_latents:
@@ -431,13 +494,22 @@ async def generate_lipsync(
                     input_latent_list.append(latents)
         
         # Cycle for smoothing
-        frame_list_cycle = frame_list + frame_list[::-1]
+        import time
+        print("Preparing cycled data...")
+        t0 = time.time()
+        
+        # Use list() to force conversion if numpy array
+        frame_list_cycle = list(frame_list) + list(frame_list)[::-1]
         coord_list_cycle = coord_list + coord_list[::-1]
         input_latent_list_cycle = input_latent_list + input_latent_list[::-1]
         
+        print(f"✓ Data cycled in {time.time()-t0:.2f}s")
+        
         if use_cached_masks:
+            t0 = time.time()
             masks_list_cycle = masks_list + masks_list[::-1]
             crop_boxes_list_cycle = crop_boxes_list + crop_boxes_list[::-1]
+            print(f"✓ Masks cycled in {time.time()-t0:.2f}s")
 
         # Inference with mixed precision (OPTIMIZATION)
         print("Starting inference...")
@@ -519,10 +591,10 @@ async def generate_lipsync(
         temp_vid = os.path.join(RESULT_DIR, f"temp_{output_id}.mp4")
         
         cmd_img2video = f"ffmpeg -y -v warning -r {fps} -f image2 -i {result_img_path}/%08d.png -vcodec libx264 -vf format=yuv420p -crf 18 {temp_vid}"
-        os.system(cmd_img2video)
-        
+        subprocess.run(cmd_img2video, shell=True, check=True)
+
         cmd_combine = f"ffmpeg -y -v warning -i {audio_path} -i {temp_vid} {output_video}"
-        os.system(cmd_combine)
+        subprocess.run(cmd_combine, shell=True, check=True)
         
         # Cleanup
         shutil.rmtree(result_img_path)
@@ -601,12 +673,3 @@ async def root():
             "clear_cache": "DELETE /clear_cache/{video_id} - Clear all cached data"
         }
     }
-
-
-if __name__ == "__main__":
-    uvicorn.run(
-        "inference_optimized:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True
-    )
