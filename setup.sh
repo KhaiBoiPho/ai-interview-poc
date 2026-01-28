@@ -76,11 +76,10 @@ pip install \
   addict \
   yapf \
   termcolor \
-  chumpy \
   json-tricks \
   munkres \
   scipy==1.11.4
-
+pip install chumpy --no-build-isolation
 # ------------------------------------------------
 # xtcocotools (ABI SAFE)
 # ------------------------------------------------
