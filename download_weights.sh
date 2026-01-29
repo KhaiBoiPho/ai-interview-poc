@@ -15,6 +15,8 @@ import os
 files = [
     'musetalkV15/musetalk.json',
     'musetalkV15/unet.pth'
+    'musetalk/musetalk.json'
+    'musetalk/pytorch_model.bin'
 ]
 
 for file in files:
@@ -75,19 +77,17 @@ hf_hub_download(
 )
 "
 
-# ✅ REQUIRED: Face Parse BiSeNet
 echo "⬇️ [5/5] Downloading Face Parse BiSeNet..."
 mkdir -p $MODELS_DIR/face-parse-bisent
 
-# Install gdown if needed
-pip install -q gdown
-
-# BiSeNet model
-gdown --fuzzy https://drive.google.com/file/d/154JgKpzCPW82qINcVieuPH3fZ2e0P812 \
+# BiSeNet weights
+wget -q \
+  https://huggingface.co/afrizalha/musetalk-models/resolve/main/face-parse-bisent/79999_iter.pth \
   -O $MODELS_DIR/face-parse-bisent/79999_iter.pth
 
 # ResNet18 backbone
-wget -q https://download.pytorch.org/models/resnet18-5c106cde.pth \
+wget -q \
+  https://download.pytorch.org/models/resnet18-5c106cde.pth \
   -O $MODELS_DIR/face-parse-bisent/resnet18-5c106cde.pth
 
 echo "✅ All required models downloaded successfully!"
