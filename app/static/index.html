@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MuseTalk WebRTC Stream</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 16px;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .info-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin-bottom: 25px;
+            border-radius: 4px;
+        }
+        
+        .controls {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        input[type="text"]:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+            font-family: inherit;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 14px 28px;
+            font-size: 16px;
+            font-weight: 600;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        button.primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        button.primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        button.danger {
+            background: #dc3545;
+            color: white;
+        }
+        
+        button.danger:hover {
+            background: #c82333;
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        #status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+        
+        #status.ready {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            color: #155724;
+        }
+        
+        #status.processing {
+            background: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            color: #0c5460;
+        }
+        
+        #status.streaming {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            color: #155724;
+        }
+        
+        #status.error {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+            color: #721c24;
+        }
+        
+        .video-container {
+            position: relative;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        
+        video {
+            width: 100%;
+            display: block;
+        }
+        
+        .stats {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        
+        .stats h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .stat-item:last-child {
+            border-bottom: none;
+        }
+        
+        .stat-label {
+            color: #666;
+        }
+        
+        .stat-value {
+            font-weight: 600;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎬 MuseTalk WebRTC Streaming</h1>
+            <p>Real-time AI Avatar with Vietnamese TTS</p>
+        </div>
+        
+        <div class="content">
+            <div class="info-box">
+                💡 <strong>How it works:</strong> Enter Vietnamese text → TTS synthesis → Real-time video stream
+            </div>
+            
+            <div class="controls">
+                <div class="form-group">
+                    <label for="avatarId">🎭 Avatar ID</label>
+                    <input type="text" id="avatarId" value="avatar1" placeholder="Enter avatar ID">
+                </div>
+                
+                <div class="form-group">
+                    <label for="text">📝 Vietnamese Text (for TTS)</label>
+                    <textarea id="text" placeholder="Nhập văn bản tiếng Việt...">Xin chào, tôi là trợ lý ảo của bạn. Hôm nay bạn có khỏe không?</textarea>
+                </div>
+                
+                <div class="button-group">
+                    <button class="primary" onclick="startStream()" id="startBtn">
+                        ▶️ Start Stream
+                    </button>
+                    <button class="danger" onclick="stopStream()" id="stopBtn" disabled>
+                        ⏹️ Stop
+                    </button>
+                </div>
+            </div>
+            
+            <div id="status" class="ready">✓ Ready to stream</div>
+            
+            <div class="video-container">
+                <video id="video" autoplay playsinline controls></video>
+            </div>
+            
+            <div class="stats">
+                <h3>📊 Statistics</h3>
+                <div id="statsContent">
+                    <div class="stat-item">
+                        <span class="stat-label">Status</span>
+                        <span class="stat-value">Waiting...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let pc = null;
+        
+        function updateStatus(message, type = 'ready') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = type;
+        }
+        
+        function updateStats(data) {
+            const statsContent = document.getElementById('statsContent');
+            statsContent.innerHTML = `
+                <div class="stat-item">
+                    <span class="stat-label">Audio Duration</span>
+                    <span class="stat-value">${data.audio_duration.toFixed(2)}s</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">TTS Latency</span>
+                    <span class="stat-value">${data.tts_latency.toFixed(2)}s</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Total Frames</span>
+                    <span class="stat-value">${data.num_frames}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Sample Rate</span>
+                    <span class="stat-value">${data.sample_rate} Hz</span>
+                </div>
+            `;
+        }
+        
+        async function startStream() {
+            const avatarId = document.getElementById('avatarId').value.trim();
+            const text = document.getElementById('text').value.trim();
+            
+            if (!avatarId || !text) {
+                alert('Please enter both Avatar ID and text');
+                return;
+            }
+            
+            // Disable start button
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            
+            updateStatus('⏳ Initializing TTS and inference...', 'processing');
+            
+            const startTime = Date.now();
+            
+            try {
+                // Create peer connection
+                pc = new RTCPeerConnection({
+                    iceServers: [{urls: 'stun:stun.l.google.com:19302'}]
+                });
+                
+                // Handle incoming video track
+                pc.ontrack = (event) => {
+                    console.log('📹 Received video track');
+                    const video = document.getElementById('video');
+                    video.srcObject = event.streams[0];
+                    
+                    const latency = ((Date.now() - startTime) / 1000).toFixed(2);
+                    updateStatus(`✅ Streaming! (First frame: ${latency}s)`, 'streaming');
+                };
+                
+                pc.onconnectionstatechange = () => {
+                    console.log('Connection state:', pc.connectionState);
+                    
+                    if (pc.connectionState === 'connected') {
+                        updateStatus('✅ Connected - streaming video...', 'streaming');
+                    } else if (pc.connectionState === 'failed') {
+                        updateStatus('❌ Connection failed', 'error');
+                        stopStream();
+                    } else if (pc.connectionState === 'closed') {
+                        updateStatus('⏹️ Connection closed', 'ready');
+                    }
+                };
+                
+                // Create offer
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                
+                // Send offer to server
+                const formData = new FormData();
+                formData.append('avatar_id', avatarId);
+                formData.append('text', text);
+                formData.append('sdp', pc.localDescription.sdp);
+                formData.append('type', pc.localDescription.type);
+                
+                const response = await fetch('/webrtc/offer', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Server error');
+                }
+                
+                const answer = await response.json();
+                
+                // Set remote description
+                await pc.setRemoteDescription(new RTCSessionDescription(answer));
+                
+                // Update stats
+                updateStats(answer);
+                
+                console.log('✅ WebRTC connection established');
+                
+            } catch (error) {
+                console.error('Error:', error);
+                updateStatus(`❌ Error: ${error.message}`, 'error');
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('stopBtn').disabled = true;
+            }
+        }
+        
+        function stopStream() {
+            if (pc) {
+                pc.close();
+                pc = null;
+                
+                const video = document.getElementById('video');
+                video.srcObject = null;
+                
+                updateStatus('⏹️ Stream stopped', 'ready');
+                
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('stopBtn').disabled = true;
+            }
+        }
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            stopStream();
+        });
+    </script>
+</body>
+</html>
